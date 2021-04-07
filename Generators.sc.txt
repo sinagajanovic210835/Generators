@@ -1,0 +1,62 @@
+trait Gen[+T] {
+    def generate: T
+    def map[S](f: T => S) = new Gen[S] {
+      override def generate = f(Gen.this.generate)
+    }
+    def flatMap[S](f: T => Gen[S]) = new Gen[S] {
+      override def generate = f(Gen.this.generate).generate
+    }
+  }
+
+
+  //integers
+  implicit val integers = new Gen[Int] {
+    val r = new java.util.Random()
+    override def generate = r.nextInt()
+  }
+  //booleans
+  implicit val booleans:Gen[Boolean] = for (i <- integers) yield i > 0
+      //between lo and hi
+      def choose(lo:Int, hi:Int):Gen[Int] = for(x <- integers) yield lo + x % (hi - lo)
+      //single el generator
+      def single[T](x:T) = new Gen[T]{
+          override def generate = x
+    }
+  //one of
+  def oneOf[T](els:T*):Gen[T] =
+    for(idx <- choose(0, els.length)) yield els(idx)
+  //lists of type T
+  implicit def lists[T](implicit gen:Gen[T], bool: Gen[Boolean]):Gen[List[T]] = {
+    val empty = single(Nil)
+    def nonEmpty = {
+      for {
+        i <- gen
+        l <- lists[T](gen, bool)
+      } yield i :: l
+    }
+    for {
+      b <- bool
+      l <- if(b) empty else nonEmpty
+    }  yield l
+  }
+
+  trait Tree[T]
+
+  case class Inner[T](left:Tree[T], right:Tree[T]) extends Tree[T]
+  case class Leaf[T](x:T) extends Tree[T]
+
+  def treeGen[T](implicit gen:Gen[T], bool:Gen[Boolean]):Gen[Tree[T]] = {
+    def leafs:Gen[Leaf[T]] =
+      for(el <- gen) yield Leaf(el)
+
+  def inners:Gen[Inner[T]] =
+    for{
+    left <- treeGen(gen, bool)
+    rght <- treeGen(gen, bool)
+    } yield Inner(left, rght)
+
+    for{
+      b <- bool
+      tree <- if(b) leafs else inners
+    } yield tree
+  }
